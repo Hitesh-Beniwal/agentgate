@@ -36,17 +36,7 @@ flowchart LR
 | No way to stop a misbehaving agent | **Kill switch**: pause any agent from the dashboard; all its calls are blocked instantly. |
 | Agents silently get worse | **Eval suite** (security + end-to-end agent cases) that runs in **GitHub Actions** and fails the build below 100%. |
 
-## Demo
 
-> 🎥 _Add your 90-second demo video link here._
-
-```bash
-npm run agent -- --as marketing "How many customers do we have in Victoria?"   # ✅ allowed, phones/emails masked
-npm run agent -- --as marketing "What is the CEO's salary?"                     # ⛔ blocked by policy
-npm run agent -- --as hr "What is the CEO's salary?"                            # ✅ HR is allowed
-npm run agent -- --as intruder "List customers"                                 # ⛔ invalid API key
-npm run tamper                                                                  # 🚨 tool quarantined within ~10s
-```
 
 ## Run it locally
 
