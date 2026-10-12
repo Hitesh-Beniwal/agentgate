@@ -1,0 +1,10 @@
+node_modules
+.env
+.env.*
+!.env.example
+dist
+.next
+*.log
+.DS_Store
+__pycache__
+evals/eval-results.json

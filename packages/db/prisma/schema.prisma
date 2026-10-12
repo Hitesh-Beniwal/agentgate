@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  budgetAud Decimal  @default(50)
+  agents    Agent[]
+}
+
+model Agent {
+  id        String        @id @default(cuid())
+  name      String
+  keyHash   String        @unique
+  paused    Boolean       @default(false)
+  teamId    String
+  team      Team          @relation(fields: [teamId], references: [id])
+  calls     ToolCall[]
+  usage     UsageReport[]
+  createdAt DateTime      @default(now())
+}
+
+model Policy {
+  id       String   @id
+  subjects Json
+  tools    String[]
+  effect   Effect
+  enabled  Boolean  @default(true)
+}
+
+model ToolPin {
+  id           String    @id @default(cuid())
+  upstream     String
+  toolName     String
+  approvedHash String?
+  currentHash  String
+  definition   Json
+  status       PinStatus @default(PENDING)
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([upstream, toolName])
+}
+
+model ToolCall {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id])
+  tool         String
+  argsRedacted Json
+  decision     Decision
+  reason       String?
+  redactions   Json
+  latencyMs    Int
+  estTokens    Int      @default(0)
+  costAud      Decimal  @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model UsageReport {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id])
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  costAud      Decimal
+  createdAt    DateTime @default(now())
+}
+
+model Alert {
+  id        String   @id @default(cuid())
+  kind      String
+  message   String
+  data      Json
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model EvalRun {
+  id        String   @id @default(cuid())
+  gitSha    String?
+  passed    Int
+  failed    Int
+  results   Json
+  createdAt DateTime @default(now())
+}
+
+enum Effect {
+  allow
+  deny
+}
+
+enum Decision {
+  ALLOW
+  DENY
+  ERROR
+}
+
+enum PinStatus {
+  PENDING
+  APPROVED
+  QUARANTINED
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@agentgate/demo-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@google/genai": "^1.20.0",
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "dotenv": "^16.4.0"
+  }
+}

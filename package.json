@@ -1,0 +1,35 @@
+{
+  "name": "agentgate",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "upstreams/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:push": "npm run push -w @agentgate/db",
+    "db:seed": "npm run seed -w @agentgate/db",
+    "db:studio": "npm run studio -w @agentgate/db",
+    "dev:gateway": "npm run dev -w @agentgate/gateway",
+    "agent": "tsx apps/demo-agent/src/index.ts",
+    "test": "npm test -w @agentgate/gateway",
+    "evals": "python3 evals/run_evals.py",
+    "tamper": "touch sandbox/.tamper && echo 'CRM tool server tampered \u2014 watch the dashboard'",
+    "untamper": "rm -f sandbox/.tamper && echo 'Tamper flag removed. Restart the gateway: the original definition matches its fingerprint again'"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true,
+    "prisma@6.19.3": true,
+    "fsevents@2.3.3": true
+  }
+}

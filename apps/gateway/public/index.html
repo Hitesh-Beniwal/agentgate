@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentGate</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .flash { animation: flash 1.2s ease-out; }
+    @keyframes flash { from { background: rgba(250, 204, 21, .25); } to { background: transparent; } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+  <header class="border-b border-slate-800 bg-slate-900/70 sticky top-0 z-10 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
+      <div class="text-xl font-bold tracking-tight">🛡️ AgentGate</div>
+      <div class="text-xs text-slate-400">Security &amp; governance gateway for AI agents (MCP)</div>
+      <div class="ml-auto flex items-center gap-2 text-xs">
+        <span id="live-dot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="live-text" class="text-slate-400">connecting…</span>
+      </div>
+    </div>
+    <nav class="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto text-sm" id="tabs"></nav>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-5 space-y-5">
+    <section class="grid grid-cols-2 md:grid-cols-5 gap-3" id="stats"></section>
+    <div id="alert-banner"></div>
+    <section id="view"></section>
+  </main>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+const H = TOKEN ? { "x-admin-token": TOKEN } : {};
+const api = (p, opts = {}) => fetch("/api" + p, { ...opts, headers: { "Content-Type": "application/json", ...H, ...(opts.headers || {}) } }).then(r => r.json());
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const time = d => new Date(d).toLocaleTimeString();
+const aud = n => "$" + Number(n || 0).toFixed(4);
+const sumRed = r => Object.values(r || {}).reduce((a, b) => a + b, 0);
+
+const TABS = ["Live", "Audit log", "Tools", "Agents", "Costs", "Policies", "Evals"];
+let tab = localStorage.getItem("ag-tab") || "Live";
+let live = [];
+
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = TABS.map(t =>
+    `<button onclick="setTab('${t}')" class="px-3 py-2 border-b-2 ${t === tab ? "border-emerald-400 text-white" : "border-transparent text-slate-400 hover:text-white"}">${t}</button>`).join("");
+}
+function setTab(t) { tab = t; try { localStorage.setItem("ag-tab", t); } catch {} renderTabs(); renderView(); }
+
+const badge = d => ({
+  ALLOW: '<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-xs font-semibold">ALLOW</span>',
+  DENY: '<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 text-xs font-semibold">BLOCKED</span>',
+  ERROR: '<span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 text-xs font-semibold">ERROR</span>',
+}[d] || d);
+
+function callRow(c, flash) {
+  const red = sumRed(c.redactions);
+  return `<tr class="border-t border-slate-800 ${flash ? "flash" : ""}">
+    <td class="py-2 pr-3 text-slate-400 mono text-xs whitespace-nowrap">${time(c.createdAt)}</td>
+    <td class="pr-3">${badge(c.decision)}</td>
+    <td class="pr-3 whitespace-nowrap">${esc(c.agent?.name)} <span class="text-slate-500 text-xs">${esc(c.agent?.team?.name)}</span></td>
+    <td class="pr-3 mono text-xs">${esc(c.tool)}</td>
+    <td class="pr-3 text-xs">${red ? `<span class="text-amber-300">🔒 ${red} masked</span> <span class="text-slate-500">${esc(Object.keys(c.redactions).join(", "))}</span>` : ""}</td>
+    <td class="pr-3 text-xs text-slate-400">${esc(c.reason || "")}</td>
+    <td class="pr-3 text-xs mono text-slate-400 whitespace-nowrap">${c.latencyMs}ms</td>
+  </tr>`;
+}
+const callTable = (rows, flashFirst) => rows.length ? `<div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/50 p-3"><table class="w-full text-sm">
+  <thead><tr class="text-left text-xs text-slate-500"><th class="pb-2">Time</th><th>Decision</th><th>Agent / team</th><th>Tool</th><th>Data masking</th><th>Reason</th><th>Latency</th></tr></thead>
+  <tbody>${rows.map((r, i) => callRow(r, flashFirst && i === 0)).join("")}</tbody></table></div>`
+  : `<div class="text-slate-500 text-sm p-6 text-center border border-dashed border-slate-800 rounded-xl">No calls yet. Run the demo agent: <span class="mono">npm run agent -- --as marketing "How many customers are in VIC?"</span></div>`;
+
+async function renderStats() {
+  const s = await api("/stats");
+  const card = (label, value, color = "text-white") => `<div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4"><div class="text-xs text-slate-400">${label}</div><div class="text-2xl font-bold ${color}">${value}</div></div>`;
+  document.getElementById("stats").innerHTML =
+    card("Tool calls today", s.total) + card("Blocked", s.denied, "text-rose-300") + card("Values masked", s.redacted, "text-amber-300") +
+    card("Spend today (AUD)", aud(s.costAud)) + card("Open alerts", s.openAlerts, s.openAlerts ? "text-rose-400" : "text-white");
+  const alerts = s.openAlerts ? (await api("/alerts")).filter(a => !a.resolved) : [];
+  document.getElementById("alert-banner").innerHTML = alerts.map(a =>
+    `<div class="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">🚨 <b>${esc(a.kind)}</b> — ${esc(a.message)} <button onclick="setTab('Tools')" class="underline ml-2">Review</button></div>`).join("");
+}
+
+async function renderView() {
+  const v = document.getElementById("view");
+  if (tab === "Live") {
+    if (!live.length) live = await api("/calls?limit=50");
+    v.innerHTML = `<h2 class="text-sm text-slate-400 mb-2">Live tool calls (streaming)</h2>` + callTable(live, true);
+  }
+  if (tab === "Audit log") {
+    const q = new URLSearchParams(window._auditFilter || {}).toString();
+    const rows = await api("/calls?limit=300&" + q);
+    const f = window._auditFilter || {};
+    v.innerHTML = `<form onsubmit="event.preventDefault(); window._auditFilter = Object.fromEntries(new FormData(this)); renderView();" class="flex flex-wrap gap-2 mb-3 text-sm">
+        <input name="agent" value="${esc(f.agent || "")}" placeholder="agent" class="bg-slate-900 border border-slate-700 rounded px-2 py-1"/>
+        <input name="team" value="${esc(f.team || "")}" placeholder="team" class="bg-slate-900 border border-slate-700 rounded px-2 py-1"/>
+        <input name="tool" value="${esc(f.tool || "")}" placeholder="tool" class="bg-slate-900 border border-slate-700 rounded px-2 py-1"/>
+        <select name="decision" class="bg-slate-900 border border-slate-700 rounded px-2 py-1">
+          ${["", "ALLOW", "DENY", "ERROR"].map(d => `<option ${f.decision === d ? "selected" : ""} value="${d}">${d || "any decision"}</option>`).join("")}</select>
+        <button class="bg-emerald-600 hover:bg-emerald-500 rounded px-3 py-1">Filter</button></form>` + callTable(rows);
+  }
+  if (tab === "Tools") {
+    const pins = await api("/tools");
+    const color = { APPROVED: "text-emerald-300", QUARANTINED: "text-rose-300", PENDING: "text-amber-300" };
+    v.innerHTML = `<p class="text-sm text-slate-400 mb-3">Every tool definition is fingerprinted (SHA-256). If an upstream server changes a tool after approval, it is quarantined until an admin reviews it.</p>
+      <div class="grid md:grid-cols-2 gap-3">${pins.map(p => `
+      <div class="rounded-xl border ${p.status === "QUARANTINED" ? "border-rose-500/60 bg-rose-500/5" : "border-slate-800 bg-slate-900/50"} p-4">
+        <div class="flex items-center gap-2"><span class="mono text-sm">${esc(p.upstream)}__${esc(p.toolName)}</span>
+          <span class="ml-auto text-xs font-semibold ${color[p.status]}">${p.status}</span></div>
+        <div class="text-xs text-slate-400 mt-2">${esc(p.definition?.description || "")}</div>
+        <div class="text-[10px] mono text-slate-600 mt-2">approved ${esc((p.approvedHash || "—").slice(0, 16))} · current ${esc(p.currentHash.slice(0, 16))}</div>
+        ${p.status !== "APPROVED" ? `<button onclick="approve('${p.id}')" class="mt-3 text-xs bg-slate-700 hover:bg-slate-600 rounded px-3 py-1">Approve this definition</button>` : ""}
+      </div>`).join("")}</div>`;
+  }
+  if (tab === "Agents") {
+    const agents = await api("/agents");
+    v.innerHTML = `<p class="text-sm text-slate-400 mb-3">Kill switch: pausing an agent blocks all of its tool calls instantly.</p>
+      <div class="grid md:grid-cols-3 gap-3">${agents.map(a => `
+      <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+        <div class="font-semibold">${esc(a.name)}</div><div class="text-xs text-slate-400">team: ${esc(a.team)}</div>
+        <button onclick="toggleAgent('${a.id}')" class="mt-3 text-xs rounded px-3 py-1 ${a.paused ? "bg-emerald-700 hover:bg-emerald-600" : "bg-rose-700 hover:bg-rose-600"}">${a.paused ? "▶ Resume agent" : "⏸ Pause agent"}</button>
+        ${a.paused ? '<span class="ml-2 text-xs text-rose-300">PAUSED</span>' : ""}
+      </div>`).join("")}</div>`;
+  }
+  if (tab === "Costs") {
+    const costs = await api("/costs");
+    v.innerHTML = `<p class="text-sm text-slate-400 mb-3">Daily spend per team = tokens added by tool results + LLM usage reported by agents. Calls are blocked once a team hits its daily budget.</p>
+      <div class="grid md:grid-cols-3 gap-3">${costs.map(c => {
+        const pct = Math.min(100, (c.todayAud / c.budgetAud) * 100);
+        return `<div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <div class="flex"><div class="font-semibold">${esc(c.team)}</div><div class="ml-auto text-xs text-slate-400">budget $${c.budgetAud.toFixed(2)}/day</div></div>
+          <div class="text-2xl font-bold mt-1">${aud(c.todayAud)}</div>
+          <div class="h-2 bg-slate-800 rounded mt-2"><div class="h-2 rounded ${pct > 80 ? "bg-rose-500" : "bg-emerald-500"}" style="width:${Math.max(pct, 1)}%"></div></div>
+          <div class="text-xs text-slate-400 mt-2">tools ${aud(c.toolTodayAud)} · LLM ${aud(c.llmTodayAud)} (${c.llmTokensToday.toLocaleString()} tokens)</div>
+          <div class="text-xs text-slate-500">all time ${aud(c.allTimeAud)}</div></div>`; }).join("")}</div>`;
+  }
+  if (tab === "Policies") {
+    const p = await api("/policies");
+    v.innerHTML = `<p class="text-sm text-slate-400 mb-3">Loaded from <span class="mono">policies/default.yaml</span> — edit the file and it reloads automatically. Deny wins; anything not allowed is denied.</p>
+      <div class="grid md:grid-cols-2 gap-3">${p.rules.map(r => `<div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+        <div class="flex"><span class="mono text-sm">${esc(r.id)}</span><span class="ml-auto text-xs font-semibold ${r.effect === "deny" ? "text-rose-300" : "text-emerald-300"}">${r.effect.toUpperCase()}</span></div>
+        <div class="text-xs text-slate-400 mt-1">${esc(r.description || "")}</div>
+        <div class="text-xs mt-2">teams: <span class="mono">${esc(r.teams.join(", "))}</span></div>
+        <div class="text-xs">tools: <span class="mono">${esc(r.tools.join(", "))}</span></div></div>`).join("")}</div>`;
+  }
+  if (tab === "Evals") {
+    const runs = await api("/evals");
+    v.innerHTML = `<p class="text-sm text-slate-400 mb-3">Results from <span class="mono">npm run evals</span> (also runs in CI on every push).</p>` + (runs.length ? runs.map(r => {
+      const total = r.passed + r.failed, pct = total ? Math.round((r.passed / total) * 100) : 0;
+      return `<details class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 mb-2"><summary class="cursor-pointer">
+        <b class="${r.failed ? "text-rose-300" : "text-emerald-300"}">${pct}% passed</b> — ${r.passed}/${total} cases · ${new Date(r.createdAt).toLocaleString()} ${r.gitSha ? `· <span class="mono text-xs">${esc(r.gitSha.slice(0, 7))}</span>` : ""}</summary>
+        <ul class="mt-2 text-sm space-y-1">${(r.results || []).map(x => `<li>${x.passed ? "✅" : "❌"} <span class="mono">${esc(x.id)}</span> <span class="text-slate-400">${esc(x.detail || "")}</span></li>`).join("")}</ul></details>`; }).join("")
+      : `<div class="text-slate-500 text-sm">No eval runs yet.</div>`);
+  }
+}
+
+async function approve(id) { await api(`/tools/${id}/approve`, { method: "POST" }); renderStats(); renderView(); }
+async function toggleAgent(id) { await api(`/agents/${id}/toggle`, { method: "POST" }); renderView(); }
+
+function connect() {
+  const es = new EventSource("/api/events" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""));
+  es.addEventListener("hello", () => { document.getElementById("live-dot").className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse"; document.getElementById("live-text").textContent = "live"; });
+  es.onerror = () => { document.getElementById("live-dot").className = "w-2 h-2 rounded-full bg-rose-500"; document.getElementById("live-text").textContent = "reconnecting…"; };
+  es.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.type === "call") { live.unshift(e.call); live = live.slice(0, 100); if (tab === "Live") renderView(); }
+    if (e.type === "tools" && tab === "Tools") renderView();
+    if (e.type === "agents" && (tab === "Agents" || tab === "Costs")) renderView();
+    renderStats();
+  };
+}
+
+renderTabs(); renderStats(); renderView(); connect();
+</script>
+</body>
+</html>

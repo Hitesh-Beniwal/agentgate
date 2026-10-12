@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agentgate
+          POSTGRES_PASSWORD: agentgate
+          POSTGRES_DB: agentgate
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://agentgate:agentgate@localhost:5433/agentgate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests (PII detectors + policy engine)
+        run: npm test
+
+      - name: Database
+        run: touch .env && npm run db:push && npm run db:seed
+
+      - name: Start gateway
+        run: |
+          npm run start -w @agentgate/gateway > gateway.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:4000/health && break; sleep 2; done
+
+      - name: Security evals (must be 100%)
+        run: python3 evals/run_evals.py --threshold 1.0
+
+      - name: Gateway log
+        if: always()
+        run: cat gateway.log

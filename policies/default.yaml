@@ -1,0 +1,30 @@
+# AgentGate access policies
+# - Rules match agents by team and tools by glob pattern (* = anything).
+# - DENY always wins over ALLOW.
+# - If no ALLOW rule matches, the call is denied (default deny).
+# Edit this file while the gateway is running — it reloads automatically.
+
+policies:
+  - id: block-destructive
+    description: Nobody may delete records or modify files through an agent
+    teams: ["*"]
+    tools: ["*__delete_*", "fs__write_file", "fs__edit_file", "fs__move_file", "fs__create_directory"]
+    effect: deny
+
+  - id: read-company-files
+    description: All teams may read the shared company folder
+    teams: ["*"]
+    tools: ["fs__read_*", "fs__list_*", "fs__search_files", "fs__get_file_info", "fs__directory_tree"]
+    effect: allow
+
+  - id: crm-read
+    description: Marketing and Sales can look up customers
+    teams: [marketing, sales]
+    tools: ["crm__query_customers", "crm__get_customer"]
+    effect: allow
+
+  - id: hr-salaries
+    description: Only HR can see salaries
+    teams: [hr]
+    tools: ["crm__query_salaries"]
+    effect: allow

@@ -1,0 +1,19 @@
+{
+  "name": "@agentgate/db",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "push": "dotenv -e ../../.env -- prisma db push",
+    "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
+    "studio": "dotenv -e ../../.env -- prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.0",
+    "prisma": "^6.0.0",
+    "tsx": "^4.19.0"
+  }
+}
